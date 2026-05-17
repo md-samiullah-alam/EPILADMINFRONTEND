@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { NavLink } from "react-router-dom";
-import { FaTasks, FaClipboardList, FaLifeRing, FaHeadset, FaBars, FaTimes, FaCodeBranch } from "react-icons/fa";
+import { FaTasks, FaClipboardList, FaLifeRing, FaHeadset, FaBars, FaTimes, FaCodeBranch, FaList } from "react-icons/fa";
 import axios from "axios";
 
 // MenuItem Component
@@ -150,6 +150,7 @@ export default function Sidebar({ mobile }) {
             <MenuItem to="/support-ticket" icon={FaHeadset} onClick={closeSidebar} count={supportTicketCount}>
               Support Ticket
             </MenuItem>
+            <MenuItem to="/worklist" icon={FaList} onClick={closeSidebar}>WorkList</MenuItem>
           </nav>
 
           {/* ✅ VERSION AT BOTTOM - MOBILE */}
@@ -186,6 +187,7 @@ export default function Sidebar({ mobile }) {
         <MenuItem to="/support-ticket" icon={FaHeadset} count={supportTicketCount}>
           Support Ticket
         </MenuItem>
+        <MenuItem to="/worklist" icon={FaList} count={0}>WorkList</MenuItem>
       </nav>
 
       {/* ✅ VERSION AT BOTTOM - DESKTOP */}
