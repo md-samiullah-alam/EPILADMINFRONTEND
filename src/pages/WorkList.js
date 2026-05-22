@@ -9,7 +9,7 @@ import jsPDF from "jspdf";
 import autoTable from "jspdf-autotable";
 
 const FREQUENCIES = ["Daily", "Weekly", "Monthly", "Yearly"];
-const WORKING_TIMES = ["30M", "45M", "60M", "90M", "120M", "150M", "180M", "210M", "240M", "300M"];
+const WORKING_TIMES = ["10M","15M","20","30M", "45M", "60M", "90M", "120M", "150M", "180M", "210M", "240M", "300M"];
 const WEEK_DAYS = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"];
 const MONTH_DATES = Array.from({ length: 31 }, (_, i) => i + 1);
 const MONTHS = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
