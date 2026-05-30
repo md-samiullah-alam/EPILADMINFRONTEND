@@ -28,6 +28,10 @@ export default function SupportTicket() {
   // Status filter for Created view
   const [createdStatusFilter, setCreatedStatusFilter] = useState(""); // "", "Active", "Done", "Approved"
 
+  // Department filter for All view
+  const [departmentFilter, setDepartmentFilter] = useState("");
+  const [uniqueDepartments, setUniqueDepartments] = useState([]);
+
   const [allTicketsLoading, setAllTicketsLoading] = useState(false);
   const [createdTicketsLoading, setCreatedTicketsLoading] = useState(false);
   const [creating, setCreating] = useState(false);
@@ -63,7 +67,12 @@ export default function SupportTicket() {
     setAllTicketsLoading(true);
     try {
       const res = await axios.get("/support-tickets/all", authHeader);
-      setTickets(res.data.tickets || []);
+      const ticketData = res.data.tickets || [];
+      setTickets(ticketData);
+      
+      // Extract unique departments for filter
+      const depts = [...new Set(ticketData.map(t => t.Department).filter(d => d))];
+      setUniqueDepartments(depts);
     } catch (err) {
       console.error(err);
       toast.error("Failed to load tickets");
@@ -259,23 +268,36 @@ export default function SupportTicket() {
     }
   };
 
-  // Filter tickets based on status filter
-  const getFilteredTickets = (tickets, filter) => {
-    if (!filter) return tickets;
+  // Filter tickets based on status filter and department filter
+  const getFilteredTickets = (tickets, status, department) => {
+    let filtered = tickets;
     
-    switch(filter) {
-      case "Active":
-        return tickets.filter(t => t.Status === "Pending" || t.Status === "InProgress");
-      case "Done":
-        return tickets.filter(t => t.Status === "Done" && t.Taskcompletedapproval !== "Approved");
-      case "Approved":
-        return tickets.filter(t => t.Status === "Done" && t.Taskcompletedapproval === "Approved");
-      default:
-        return tickets;
+    // Status filter
+    if (status) {
+      switch(status) {
+        case "Active":
+          filtered = filtered.filter(t => t.Status === "Pending" || t.Status === "InProgress");
+          break;
+        case "Done":
+          filtered = filtered.filter(t => t.Status === "Done" && t.Taskcompletedapproval !== "Approved");
+          break;
+        case "Approved":
+          filtered = filtered.filter(t => t.Status === "Done" && t.Taskcompletedapproval === "Approved");
+          break;
+        default:
+          break;
+      }
     }
+    
+    // Department filter
+    if (department) {
+      filtered = filtered.filter(t => t.Department === department);
+    }
+    
+    return filtered;
   };
 
-  // Group tickets by Issue
+  // Group tickets by Issue with Department
   const groupTicketsByIssue = (tickets) => {
     const grouped = {};
     
@@ -294,6 +316,7 @@ export default function SupportTicket() {
           DoneDate: ticket.DoneDate || "",
           Taskcompletedapproval: ticket.Taskcompletedapproval || "Pending",
           AssignedTo: ticket.AssignedTo,
+          Department: ticket.Department || "N/A",
           uniqueWorkBy: ticket.WorkBy ? [ticket.WorkBy] : []
         };
       } else {
@@ -313,6 +336,11 @@ export default function SupportTicket() {
         // Update Taskcompletedapproval - if any ticket is approved, show approved
         if (ticket.Taskcompletedapproval === "Approved") {
           grouped[ticket.Issue].Taskcompletedapproval = "Approved";
+        }
+        
+        // Department should be same for same issue
+        if (ticket.Department && !grouped[ticket.Issue].Department) {
+          grouped[ticket.Issue].Department = ticket.Department;
         }
       }
     });
@@ -381,14 +409,17 @@ export default function SupportTicket() {
   };
 
   // ============== COUNT VARIABLES ==============
-  // ALL TICKETS - Unique counts based on grouped tickets
-  const allCounts = getUniqueCounts(tickets);
+  // ALL TICKETS - Filtered by status and department
+  const filteredAllForCount = getFilteredTickets(tickets, statusFilter, departmentFilter);
+  const groupedAllForCount = groupTicketsByIssue(filteredAllForCount);
+  const allCounts = getUniqueCounts(filteredAllForCount);
   const allActiveCount = allCounts.active;
   const allCompletedCount = allCounts.completed;
   const allApprovedCount = allCounts.approved;
 
   // CREATED TICKETS - Unique counts based on grouped tickets
-  const createdCounts = getUniqueCounts(createdTickets);
+  const filteredCreatedForCount = getFilteredTickets(createdTickets, createdStatusFilter, "");
+  const createdCounts = getUniqueCounts(filteredCreatedForCount);
   const createdActiveCount = createdCounts.active;
   const createdCompletedCount = createdCounts.completed;
   const createdApprovedCount = createdCounts.approved;
@@ -398,11 +429,11 @@ export default function SupportTicket() {
   const uniqueCreatedTotal = groupTicketsByIssue(createdTickets).length;
 
   // Filter and group tickets for All view
-  const filteredAll = getFilteredTickets(tickets, statusFilter);
+  const filteredAll = getFilteredTickets(tickets, statusFilter, departmentFilter);
   const groupedAll = groupTicketsByIssue(filteredAll);
   
   // Filter and group tickets for Created view
-  const filteredCreated = getFilteredTickets(createdTickets, createdStatusFilter);
+  const filteredCreated = getFilteredTickets(createdTickets, createdStatusFilter, "");
   const groupedCreated = groupTicketsByIssue(filteredCreated);
 
   // Function to get status button class for All view
@@ -483,38 +514,70 @@ export default function SupportTicket() {
       {/* ================= ALL TICKETS TAB ================= */}
       {activeMainTab === "all" && (
         <>
-          {/* STATUS FILTER TABS - For All view */}
-          <div className="bg-white p-4 rounded shadow mb-4 flex gap-2 flex-wrap">
-            <button
-              onClick={() => setStatusFilter("Active")}
-              className={getStatusButtonClass("Active")}
-            >
-              Active (Pending & In Progress) ({allActiveCount})
-            </button>
-            
-            <button
-              onClick={() => setStatusFilter("Done")}
-              className={getStatusButtonClass("Done")}
-            >
-              Completed ({allCompletedCount})
-            </button>
-            
-            <button
-              onClick={() => setStatusFilter("Approved")}
-              className={getStatusButtonClass("Approved")}
-            >
-              Approved ({allApprovedCount})
-            </button>
+          {/* STATUS FILTER TABS */}
+          <div className="bg-white p-4 rounded shadow mb-4">
+            <div className="flex gap-2 flex-wrap mb-3">
+              <button
+                onClick={() => setStatusFilter("Active")}
+                className={getStatusButtonClass("Active")}
+              >
+                Active (Pending & InProgress) ({allActiveCount})
+              </button>
+              
+              <button
+                onClick={() => setStatusFilter("Done")}
+                className={getStatusButtonClass("Done")}
+              >
+                Completed ({allCompletedCount})
+              </button>
+              
+              <button
+                onClick={() => setStatusFilter("Approved")}
+                className={getStatusButtonClass("Approved")}
+              >
+                Approved ({allApprovedCount})
+              </button>
 
-            <button
-              onClick={() => setStatusFilter("")}
-              className={getStatusButtonClass("")}
-            >
-              All ({uniqueAllTotal})
-            </button>
+              <button
+                onClick={() => setStatusFilter("")}
+                className={getStatusButtonClass("")}
+              >
+                All ({groupedAll.length})
+              </button>
+            </div>
+
+            {/* DEPARTMENT FILTER */}
+            {uniqueDepartments.length > 0 && (
+              <div className="flex gap-2 flex-wrap items-center pt-3 border-t">
+                <span className="text-sm font-medium text-gray-700">Department:</span>
+                <button
+                  onClick={() => setDepartmentFilter("")}
+                  className={`px-3 py-1 rounded text-xs transition ${
+                    departmentFilter === "" 
+                      ? "bg-gray-600 text-white" 
+                      : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                  }`}
+                >
+                  All Departments
+                </button>
+                {uniqueDepartments.map(dept => (
+                  <button
+                    key={dept}
+                    onClick={() => setDepartmentFilter(dept)}
+                    className={`px-3 py-1 rounded text-xs transition ${
+                      departmentFilter === dept 
+                        ? "bg-purple-600 text-white" 
+                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
+                  >
+                    {dept}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
-          {/* TICKETS LIST - All view */}
+          {/* TICKETS LIST - All view with Department */}
           <div className="space-y-2">
             {allTicketsLoading && (
               <div className="text-center py-6 text-sm">Loading tickets...</div>
@@ -541,11 +604,6 @@ export default function SupportTicket() {
                         <span className="text-xs bg-gray-100 px-2 py-0.5 rounded font-mono whitespace-nowrap">
                           {group.TicketID}
                         </span>
-                        {/* {group.count > 1 && (
-                          <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded whitespace-nowrap">
-                            {group.count} tickets
-                          </span>
-                        )} */}
                         <span className="font-medium text-sm line-clamp-2 flex-1">
                           {group.Issue}
                         </span>
@@ -560,7 +618,15 @@ export default function SupportTicket() {
                         <span className="font-medium">{formatDate(group.CreatedDate)}</span>
                       </div>
                       
-                      {/* Line 3: Assigned To / Work By | Status | Done Date */}
+                      {/* Line 3: DEPARTMENT (NEW) */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs mb-1">
+                        <span className="text-gray-500">Department:</span>
+                        <span className="font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                          {group.Department}
+                        </span>
+                      </div>
+                      
+                      {/* Line 4: Assigned To / Work By | Status | Done Date */}
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                         <span className="text-gray-500">Assigned To:</span>
                         <span className="font-medium text-blue-600">
@@ -727,13 +793,13 @@ export default function SupportTicket() {
             </button>
           </div>
 
-          {/* STATUS FILTER TABS - For Created view - Now matching All view style */}
+          {/* STATUS FILTER TABS - For Created view */}
           <div className="bg-white p-4 rounded shadow mb-4 flex gap-2 flex-wrap">
             <button
               onClick={() => setCreatedStatusFilter("Active")}
               className={getCreatedStatusButtonClass("Active")}
             >
-              Active (Pending & In Progress) ({createdActiveCount})
+              Active (Pending & InProgress) ({createdActiveCount})
             </button>
             
             <button
@@ -758,7 +824,7 @@ export default function SupportTicket() {
             </button>
           </div>
 
-          {/* CREATED TICKETS LIST */}
+          {/* CREATED TICKETS LIST with Department */}
           <div className="space-y-2">
             {createdTicketsLoading && (
               <div className="text-center py-6 text-sm">Loading created tickets...</div>
@@ -804,7 +870,15 @@ export default function SupportTicket() {
                         <span className="font-medium">{formatDate(group.CreatedDate)}</span>
                       </div>
                       
-                      {/* Line 3: Assigned To / Work By | Status | Done Date */}
+                      {/* Line 3: DEPARTMENT (NEW) */}
+                      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs mb-1">
+                        <span className="text-gray-500">Department:</span>
+                        <span className="font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded">
+                          {group.Department}
+                        </span>
+                      </div>
+                      
+                      {/* Line 4: Assigned To / Work By | Status | Done Date */}
                       <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
                         <span className="text-gray-500">Assigned To:</span>
                         <span className="font-medium text-blue-600">
