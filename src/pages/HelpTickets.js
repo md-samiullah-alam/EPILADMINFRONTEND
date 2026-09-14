@@ -129,19 +129,26 @@ export default function HelpTickets() {
       alert("All fields are required");
       return;
     }
+    if (form.IssuePhoto) {
+      const f = form.IssuePhoto;
+      if (f.size > 5 * 1024 * 1024) return alert("Image too large (max 5MB). Please compress below 2MB and retry.");
+      if (!/^(image\/(jpeg|png|gif|webp|jpg)|application\/pdf)$/.test(f.type) && !/\.(jpe?g|png|gif|webp|pdf)$/i.test(f.name || "")) {
+        return alert("Only JPG, PNG, GIF, WEBP or PDF allowed. iPhone HEIC supported nahi hai - JPG/screenshot bhejo.");
+      }
+    }
 
     setCreating(true);
     try {
       const formData = new FormData();
       formData.append("AssignedTo", form.AssignedTo);
       formData.append("Issue", form.Issue.trim());
-      if (form.IssuePhoto) formData.append("IssuePhoto", form.IssuePhoto);
+      if (form.IssuePhoto) formData.append("IssuePhoto", form.IssuePhoto, form.IssuePhoto.name);
 
       await axios.post("/helpTickets/create", formData, {
         headers: {
           ...authHeader.headers,
-          "Content-Type": "multipart/form-data",
         },
+        timeout: 60000,
       });
 
       await loadCreatedTickets();
@@ -150,7 +157,8 @@ export default function HelpTickets() {
       if (fileInputRef.current) fileInputRef.current.value = "";
     } catch (err) {
       console.error(err);
-      alert("Failed to create ticket");
+      const srv = err.response?.data;
+      alert(srv ? (srv.error + (srv.hint ? "\n" + srv.hint : "")) : "Failed to create ticket");
     }
     setCreating(false);
   };

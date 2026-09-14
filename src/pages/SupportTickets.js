@@ -123,6 +123,17 @@ export default function SupportTicket() {
       toast.error("Issue description is required");
       return;
     }
+    if (form.IssuePhoto) {
+      const f = form.IssuePhoto;
+      if (f.size > 5 * 1024 * 1024) {
+        toast.error("Image too large (max 5MB). Please compress below 2MB and retry.");
+        return;
+      }
+      if (!/^(image\/(jpeg|png|gif|webp|jpg)|application\/pdf)$/.test(f.type) && !/\.(jpe?g|png|gif|webp|pdf)$/i.test(f.name || "")) {
+        toast.error("Only JPG, PNG, GIF, WEBP or PDF allowed. iPhone HEIC supported nahi hai - JPG/screenshot bhejo.");
+        return;
+      }
+    }
 
     setCreating(true);
     const toastId = toast.loading("Creating ticket...");
@@ -130,18 +141,18 @@ export default function SupportTicket() {
     try {
       const formData = new FormData();
       formData.append("Issue", form.Issue);
-      if (form.IssuePhoto) formData.append("IssuePhoto", form.IssuePhoto);
-
-      // Clear form
-      setForm({ Issue: "", IssuePhoto: null });
-      if (fileInputRef.current) fileInputRef.current.value = null;
+      if (form.IssuePhoto) formData.append("IssuePhoto", form.IssuePhoto, form.IssuePhoto.name);
 
       await axios.post("/support-tickets/create", formData, {
         headers: {
           ...authHeader.headers,
-          "Content-Type": "multipart/form-data",
         },
+        timeout: 60000,
       });
+
+      // Clear form only on success
+      setForm({ Issue: "", IssuePhoto: null });
+      if (fileInputRef.current) fileInputRef.current.value = null;
 
       await loadCreatedTickets();
       
@@ -153,11 +164,12 @@ export default function SupportTicket() {
       });
     } catch (err) {
       console.error(err);
+      const srv = err.response?.data;
       toast.update(toastId, {
-        render: err.response?.data?.error || "Failed to create ticket",
+        render: srv ? (srv.error + (srv.hint ? " " + srv.hint : "")) : "Failed to create ticket",
         type: "error",
         isLoading: false,
-        autoClose: 3000
+        autoClose: 5000
       });
     }
 
@@ -326,6 +338,11 @@ export default function SupportTicket() {
         // Track unique workBy
         if (ticket.WorkBy && !grouped[ticket.Issue].uniqueWorkBy.includes(ticket.WorkBy)) {
           grouped[ticket.Issue].uniqueWorkBy.push(ticket.WorkBy);
+        }
+
+        // FIX: pehle ticket me photo na ho par baad wale me ho to group photo set karo
+        if (!grouped[ticket.Issue].IssuePhoto && ticket.IssuePhoto) {
+          grouped[ticket.Issue].IssuePhoto = ticket.IssuePhoto;
         }
         
         // Update DoneDate if exists
@@ -1016,8 +1033,11 @@ export default function SupportTicket() {
             <img
               src={modalImage}
               alt="Issue"
-              className="max-w-full max-h-[80vh] rounded shadow-lg object-contain"
+              className="max-w-full max-h-[80vh] rounded shadow-lg object-contain bg-white"
               onClick={(e) => e.stopPropagation()}
+              onError={(e) => {
+                e.currentTarget.src = "data:image/svg+xml," + encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200"><rect width="100%" height="100%" fill="#f3f4f6"/><text x="50%" y="50%" text-anchor="middle" font-size="14" fill="#6b7280">Image load nahi hui. URL expired/broken ho sakta hai.</text></svg>`);
+              }}
             />
           </div>
         </div>

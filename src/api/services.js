@@ -137,6 +137,9 @@ export const deleteTrainingQuestion = (qaId) =>
 export const getTrainingRecords = (params) =>
   axios.get("/training/records", { ...authHeader(), params });
 
+export const getTrainingSummary = (params) =>
+  axios.get("/training/records/summary", { ...authHeader(), params });
+
 // ──── OCCUPANCY ────
 export const getAdminOccupancy = (date) =>
   axios.get(`/worklist/admin/occupancy?date=${date}`, authHeader());

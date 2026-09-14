@@ -3,7 +3,7 @@ import {
   getAllEmployees, getTrainingTemplates, getTrainingDepartments, createTrainingTemplate,
   approveTrainingTemplate, deleteTrainingTemplate, addTrainingIndex, updateTrainingIndex,
   deleteTrainingIndex, getTrainingQuestions, addTrainingQuestion, updateTrainingQuestion,
-  deleteTrainingQuestion, getTrainingRecords,
+  deleteTrainingQuestion, getTrainingRecords, getTrainingSummary,
 } from "../api/services";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
@@ -19,11 +19,39 @@ const APPROVAL_BADGE = {
 };
 const newQuestionRow = () => ({ question: "", optionA: "", optionB: "", optionC: "", optionD: "", correctOption: "A" });
 
+const DEPARTMENT_OPTIONS = [
+  "COMMON",
+  "ACCOUNTS",
+  "BOILER",
+  "DISPATCH",
+  "DRIVER",
+  "ELECTRICAL",
+  "HR",
+  "IMPORT-EXPORT",
+  "INSTRUMENT",
+  "MAINTENANCE",
+  "MD",
+  "MDO",
+  "PRODUCTION",
+  "PROJECT",
+  "PULP",
+  "PURCHASE",
+  "REQURTMENT",
+  "RM",
+  "RO",
+  "SALES MDO CRM",
+  "SALES MDO SC",
+  "SALES MDO MARKETING",
+  "UTILITY ENG",
+  "STORE DEPARTMENT",
+  "MIS",
+];
+
 export default function Training() {
   const [tab, setTab] = useState("add"); // "add" | "approved" | "review"
 
   // ---------- ADD TEMPLATE ----------
-  const [form, setForm] = useState({ department: "", name: "", templateScore: 100 });
+  const [form, setForm] = useState({ department: "", name: "" });
   const [indices, setIndices] = useState([{ name: "Index 1", document: "", video: "" }]);
   const [questions, setQuestions] = useState([newQuestionRow()]);
   const [saving, setSaving] = useState(false);
@@ -46,7 +74,9 @@ export default function Training() {
   // ---------- PERFORMANCE REVIEW ----------
   const [employees, setEmployees] = useState([]);
   const [empFilter, setEmpFilter] = useState("all");
+  const [deptReviewFilter, setDeptReviewFilter] = useState("all"); // all | Common | dept...
   const [records, setRecords] = useState([]);
+  const [summary, setSummary] = useState(null);
   const [statusFilter, setStatusFilter] = useState("all");
   const [loadingRecords, setLoadingRecords] = useState(false);
   const [showDetails, setShowDetails] = useState({ common: false, dept: false });
@@ -77,17 +107,31 @@ export default function Training() {
     setLoadingRecords(true);
     setShowDetails({ common: false, dept: false }); // reset expand on filter change
     try {
+      // EK HI SOURCE: /records assigned rows + scoped summary dono deta hai
+      // scope: all | common | <template-dept> ; status: all|Pending|In Progress|Completed
+      const scopeParam = deptReviewFilter === "all" ? "all" : deptReviewFilter === "Common" ? "common" : deptReviewFilter;
       const res = await getTrainingRecords({
-        employeeName: empFilter === "all" ? "" : empFilter,
-        status: statusFilter === "all" ? "" : statusFilter,
+        employeeName: empFilter === "all" ? "all" : empFilter,
+        scope: scopeParam,
+        status: statusFilter === "all" ? "all" : statusFilter,
       });
       setRecords(res.data.records || []);
+      setSummary(res.data.summary || null);
     } catch (err) { console.error(err); toast.error("Failed to load records"); }
     finally { setLoadingRecords(false); }
-  }, [empFilter, statusFilter]);
+  }, [empFilter, deptReviewFilter, statusFilter]);
 
   useEffect(() => { loadDepartments(); loadEmployees(); }, [loadDepartments, loadEmployees]);
-  useEffect(() => { loadTemplates(); }, [loadTemplates]);
+  useEffect(() => { if (tab !== "review") loadTemplates(); }, [loadTemplates, tab]);
+  // review tab me Common/Dept join ke liye ALL approved templates bhi chahiye
+  useEffect(() => {
+    if (tab === "review") {
+      getTrainingTemplates({ approval: "Approved" })
+        .then((res) => setTemplates(res.data.templates || []))
+        .catch((e) => console.error(e));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tab]);
   useEffect(() => {
     if (tab === "review") {
       if (empFilter !== "all") {
@@ -99,7 +143,7 @@ export default function Training() {
       }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tab, empFilter, statusFilter]);
+  }, [tab, empFilter, deptReviewFilter, statusFilter]);
 
   // ================= QA HELPERS =================
   const loadQuestions = async (templateId) => {
@@ -125,12 +169,11 @@ export default function Training() {
       const res = await createTrainingTemplate({
         department: form.department.trim(),
         name: form.name.trim(),
-        templateScore: parseInt(form.templateScore || "100", 10),
         indices: validIndices,
         questions: questions.filter((q) => q.question && q.question.trim()),
       });
       toast.success(res.data.message || "Template created");
-      setForm({ department: "", name: "", templateScore: 100 });
+      setForm({ department: "", name: "" });
       setIndices([{ name: "Index 1", document: "", video: "" }]);
       setQuestions([newQuestionRow()]);
       loadTemplates();
@@ -243,14 +286,17 @@ export default function Training() {
       <div className="bg-white rounded-xl shadow p-5">
         <h3 className="text-lg font-black text-gray-800 mb-4">🏗️ Add New Template</h3>
         <label className="block text-xs font-bold text-gray-600 mb-1">Department *</label>
-        <input className="w-full border rounded-lg px-3 py-2 mb-3 text-sm" placeholder="e.g. Sales"
-          value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} />
+        <select className="w-full border rounded-lg px-3 py-2 mb-3 text-sm bg-white"
+          value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })}>
+          <option value="">-- Select Department --</option>
+          {DEPARTMENT_OPTIONS.map((dept) => (
+            <option key={dept} value={dept}>{dept}</option>
+          ))}
+        </select>
         <label className="block text-xs font-bold text-gray-600 mb-1">Template Name *</label>
-        <input className="w-full border rounded-lg px-3 py-2 mb-3 text-sm" placeholder="e.g. Sales Training"
+        <input className="w-full border rounded-lg px-3 py-2 mb-4 text-sm" placeholder="e.g. Sales Training"
           value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <label className="block text-xs font-bold text-gray-600 mb-1">Template Score (Max)</label>
-        <input type="number" className="w-full border rounded-lg px-3 py-2 mb-4 text-sm"
-          value={form.templateScore} onChange={(e) => setForm({ ...form, templateScore: e.target.value })} />
+        <p className="text-[11px] text-gray-500 mb-4 -mt-2">Score system auto (fixed): Document 100 + Video 100 + Q/A 100 = <b>300 / template</b></p>
 
         {/* Indices */}
         <div className="flex items-center justify-between mb-2">
@@ -506,17 +552,22 @@ export default function Training() {
   );
 
   const renderReviewTab = () => {
+    // Backend se assigned rows aati hain: har row me Type ("Common"/"Dept") + Started flag hota hai.
+    // Common/Dept count = row.Type se (template-dept join backend me ho chuka hai).
     const selectedEmpRecords = records;
-    const totalAssigned = selectedEmpRecords.length;
-    const commonRecords = selectedEmpRecords.filter((r) => r.Department === "Common");
-    const deptRecords = selectedEmpRecords.filter((r) => r.Department && r.Department !== "Common");
-    const totalCommonAssigned = commonRecords.length;
-    const totalDeptAssigned = deptRecords.length;
-    const completedCommon = commonRecords.filter((r) => r.Status === "Completed").length;
-    const completedDept = deptRecords.filter((r) => r.Status === "Completed").length;
-    const overallTotalScore = selectedEmpRecords.reduce((s, r) => s + (r.TotalScore || 0), 0);
-    const maxScore = totalAssigned * 300 || 1;
-    const overallPct = Math.round((overallTotalScore / maxScore) * 100);
+    const commonRecords = selectedEmpRecords.filter((r) => r.Type === "Common");
+    const deptRecords = selectedEmpRecords.filter((r) => r.Type !== "Common");
+    const S = summary || { common: {}, dept: {}, total: {}, templateCounts: {} };
+    const cS = S.common || {}; const dS = S.dept || {}; const tS = S.total || {};
+    // status filter sirf table pe lagta hai; cards hamesha assigned (all-status) summary dikhate hain
+    const overallPct = tS.totalMax ? Math.round((tS.totalEarned / tS.totalMax) * 100) : 0;
+
+    const statusCards = [
+      { k: "all", label: "All", count: (cS.assigned || 0) + (dS.assigned || 0) },
+      { k: "Pending", label: "Pending", count: tS.pending || 0 },
+      { k: "In Progress", label: "In Progress", count: tS.inProgress || 0 },
+      { k: "Completed", label: "Completed", count: tS.completed || 0 },
+    ];
 
     return (
       <div className="mb-6 space-y-4">
@@ -530,55 +581,64 @@ export default function Training() {
             ))}
           </select>
           <span className="mx-2 text-gray-300">|</span>
-          {["all", "Pending", "In Progress", "Completed"].map((st) => (
-            <button key={st} onClick={() => setStatusFilter(st)}
-              className={`px-4 py-2 rounded-lg text-sm font-bold ${statusFilter === st ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}>
-              {st === "all" ? "All" : st}
+          <span className="text-sm font-bold text-gray-700">🏢 Dept:</span>
+          <select value={deptReviewFilter} onChange={(e) => setDeptReviewFilter(e.target.value)}
+            className="border rounded-lg px-3 py-2 text-sm font-bold">
+            <option value="all">All (Common + Dept)</option>
+            <option value="Common">Common only</option>
+            {DEPARTMENT_OPTIONS.filter((d) => d !== "COMMON").map((d) => (
+              <option key={d} value={d}>{d}</option>
+            ))}
+          </select>
+          <span className="mx-2 text-gray-300">|</span>
+          {statusCards.map((st) => (
+            <button key={st.k} onClick={() => setStatusFilter(st.k)}
+              className={`px-4 py-2 rounded-lg text-sm font-bold ${statusFilter === st.k ? "bg-blue-600 text-white" : "bg-gray-200 text-gray-700 hover:bg-gray-300"}`}>
+              {st.label} ({st.count})
             </button>
           ))}
         </div>
 
         {loadingRecords ? (
           <p className="text-center text-gray-500 py-10">⏳ Loading records...</p>
-        ) : empFilter === "all" ? (
-          <div className="bg-white rounded-xl shadow p-8 text-center text-gray-500">
-            👆 Employee select karein to uska overall training performance dikhega.
-          </div>
         ) : (
           <>
             {/* ===== TOP SCORE CARDS ===== */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="bg-gradient-to-br from-blue-500 to-blue-700 text-white rounded-xl shadow-lg p-5">
-                <p className="text-xs uppercase opacity-80 font-bold">🏆 Total Score (Overall)</p>
-                <p className="text-4xl font-black mt-2">{overallTotalScore}</p>
-                <p className="text-xs opacity-90 mt-1">out of {maxScore} ({overallPct}%)</p>
-                <div className="h-2 bg-blue-300 rounded mt-3">
+                <p className="text-xs uppercase opacity-80 font-bold">🏆 Total Learning (Common + Dept)</p>
+                <p className="text-4xl font-black mt-2">{tS.assigned || 0}</p>
+                <p className="text-xs opacity-90 mt-1">✅ {tS.completed || 0} Done • 🔄 {tS.inProgress || 0} Prog • ⏳ {tS.pending || 0} Pend</p>
+                <p className="text-xs font-black mt-2">🎯 Score: {tS.totalEarned || 0}/{tS.totalMax || 0} ({overallPct}%)</p>
+                <div className="h-2 bg-blue-300 rounded mt-2">
                   <div className="h-2 bg-white rounded" style={{ width: `${overallPct}%` }} />
                 </div>
               </div>
 
               <div className="bg-gradient-to-br from-emerald-500 to-emerald-700 text-white rounded-xl shadow-lg p-5">
-                <p className="text-xs uppercase opacity-80 font-bold">📒 Total Common Learning</p>
-                <p className="text-4xl font-black mt-2">{totalCommonAssigned}</p>
-                <p className="text-xs opacity-90 mt-1">common trainings assigned</p>
+                <p className="text-xs uppercase opacity-80 font-bold">📒 Common Learning</p>
+                <p className="text-4xl font-black mt-2">{cS.assigned || 0}</p>
+                <p className="text-xs opacity-90 mt-1">✅ {cS.completed || 0} • 🔄 {cS.inProgress || 0} • ⏳ {cS.pending || 0}</p>
+                <p className="text-xs opacity-90 mt-1">🎯 Score: <b>{cS.totalEarned || 0}/{cS.totalMax || 0}</b></p>
                 <button
                   onClick={() => setShowDetails({ common: !showDetails.common, dept: false })}
                   className="mt-3 inline-flex items-center gap-1 text-xs bg-white text-emerald-700 px-3 py-1.5 rounded-full font-black hover:bg-emerald-50"
                 >
-                  ✅ Completed: {completedCommon}
+                  ✅ Completed: {cS.completed || 0}
                   <span className="text-[10px]">{showDetails.common ? "▲" : "▼"}</span>
                 </button>
               </div>
 
               <div className="bg-gradient-to-br from-purple-500 to-purple-700 text-white rounded-xl shadow-lg p-5">
-                <p className="text-xs uppercase opacity-80 font-bold">🏢 Total Department Learning</p>
-                <p className="text-4xl font-black mt-2">{totalDeptAssigned}</p>
-                <p className="text-xs opacity-90 mt-1">department trainings assigned</p>
+                <p className="text-xs uppercase opacity-80 font-bold">🏢 Department Learning</p>
+                <p className="text-4xl font-black mt-2">{dS.assigned || 0}</p>
+                <p className="text-xs opacity-90 mt-1">✅ {dS.completed || 0} • 🔄 {dS.inProgress || 0} • ⏳ {dS.pending || 0}</p>
+                <p className="text-xs opacity-90 mt-1">🎯 Score: <b>{dS.totalEarned || 0}/{dS.totalMax || 0}</b></p>
                 <button
                   onClick={() => setShowDetails({ common: false, dept: !showDetails.dept })}
                   className="mt-3 inline-flex items-center gap-1 text-xs bg-white text-purple-700 px-3 py-1.5 rounded-full font-black hover:bg-purple-50"
                 >
-                  ✅ Completed: {completedDept}
+                  ✅ Completed: {dS.completed || 0}
                   <span className="text-[10px]">{showDetails.dept ? "▲" : "▼"}</span>
                 </button>
               </div>
@@ -588,15 +648,15 @@ export default function Training() {
             <div className="bg-white rounded-xl shadow p-4 grid grid-cols-2 md:grid-cols-4 gap-3 text-center">
               <div>
                 <p className="text-[10px] text-gray-500 uppercase">Total Assigned</p>
-                <p className="text-2xl font-black text-gray-700">{totalAssigned}</p>
+                <p className="text-2xl font-black text-gray-700">{tS.assigned || 0}</p>
               </div>
               <div>
                 <p className="text-[10px] text-gray-500 uppercase">Common Assigned</p>
-                <p className="text-2xl font-black text-emerald-700">{totalCommonAssigned}</p>
+                <p className="text-2xl font-black text-emerald-700">{cS.assigned || 0}</p>
               </div>
               <div>
                 <p className="text-[10px] text-gray-500 uppercase">Dept. Assigned</p>
-                <p className="text-2xl font-black text-purple-700">{totalDeptAssigned}</p>
+                <p className="text-2xl font-black text-purple-700">{dS.assigned || 0}</p>
               </div>
               <div>
                 <p className="text-[10px] text-gray-500 uppercase">Overall %</p>
@@ -611,9 +671,7 @@ export default function Training() {
                   {showDetails.common ? "📒 Common Training Details (Individual)" : "🏢 Department Training Details (Individual)"}
                 </h4>
                 {(() => {
-                  const list = selectedEmpRecords.filter((r) =>
-                    showDetails.common ? r.Department === "Common" : r.Department && r.Department !== "Common"
-                  );
+                  const list = showDetails.common ? commonRecords : deptRecords;
                   if (list.length === 0)
                     return <p className="text-xs text-gray-500 text-center py-4">Koi record nahi mila.</p>;
                   return (
@@ -623,7 +681,7 @@ export default function Training() {
                           <div className="flex-1 min-w-[180px]">
                             <p className="text-sm font-black text-gray-700">{r.TemplateName || r.TemplateId}</p>
                             <p className="text-[10px] text-gray-400">{r.TemplateId}</p>
-                            <p className="text-[10px] text-gray-500 mt-1">🏢 <b>{r.Department || "Common"}</b> &nbsp;|&nbsp; 🎯 Score: <b>{r.TotalScore}/300</b></p>
+                            <p className="text-[10px] text-gray-500 mt-1">🏢 <b>{r.TemplateDepartment || r.Department || "Common"}</b> &nbsp;|&nbsp; 🎯 Score: <b>{r.TotalScore}/300</b>{!r.Started ? " • ⏳ Not started" : ""}</p>
                           </div>
                           <div className="text-[11px] text-gray-600">
                             <p>📅 Start: <b>{r.StartDate || "-"}</b></p>
@@ -646,7 +704,8 @@ export default function Training() {
                 <thead>
                   <tr className="bg-gray-100 text-left text-xs text-gray-600">
                     <th className="px-3 py-2">Template</th>
-                    <th className="px-3 py-2">Department</th>
+                    <th className="px-3 py-2">Type</th>
+                    <th className="px-3 py-2">Employee</th>
                     <th className="px-3 py-2 text-center">📄 Doc</th>
                     <th className="px-3 py-2 text-center">🎬 Video</th>
                     <th className="px-3 py-2 text-center">❓ Q/A</th>
@@ -658,20 +717,22 @@ export default function Training() {
                 </thead>
                 <tbody>
                   {selectedEmpRecords.length === 0 ? (
-                    <tr><td colSpan={9} className="text-center py-6 text-gray-500 text-xs">Is employee ka koi training record nahi mila.</td></tr>
+                    <tr><td colSpan={10} className="text-center py-6 text-gray-500 text-xs">Is filter me koi assigned learning nahi mili.</td></tr>
                   ) : selectedEmpRecords.map((r, i) => {
                     const pct = Math.min(100, Math.round((r.TotalScore / 300) * 100));
+                    const isCommon = r.Type === "Common";
                     return (
-                      <tr key={i} className="border-t border-gray-200 hover:bg-gray-50">
+                      <tr key={i} className={`border-t border-gray-200 hover:bg-gray-50 ${!r.Started ? "bg-amber-50/50" : ""}`}>
                         <td className="px-3 py-2 text-xs font-bold text-gray-700">
                           {r.TemplateName || r.TemplateId}
                           <br /><span className="text-[10px] text-gray-400">{r.TemplateId}</span>
                         </td>
                         <td className="px-3 py-2 text-xs">
-                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${r.Department === "Common" ? "bg-emerald-100 text-emerald-700" : "bg-purple-100 text-purple-700"}`}>
-                            {r.Department || "-"}
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${isCommon ? "bg-emerald-100 text-emerald-700" : "bg-purple-100 text-purple-700"}`}>
+                            {isCommon ? "📒 Common" : `🏢 ${r.TemplateDepartment || r.Department || "-"}`}
                           </span>
                         </td>
+                        <td className="px-3 py-2 text-xs">{r.EmployeeName}<br /><span className="text-[10px] text-gray-400">{r.Department}</span></td>
                         <td className="px-3 py-2 text-center">{r.DocumentScore}</td>
                         <td className="px-3 py-2 text-center">{r.VideoScore}</td>
                         <td className="px-3 py-2 text-center">{r.QaScore}</td>
