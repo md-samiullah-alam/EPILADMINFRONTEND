@@ -104,6 +104,9 @@ export const getTrainingTemplates = (params) =>
 export const getTrainingDepartments = () =>
   axios.get("/training/templates/departments", authHeader());
 
+export const getEmployeeDesignations = () =>
+  axios.get("/employee/designations", authHeader());
+
 export const createTrainingTemplate = (payload) =>
   axios.post("/training/templates", payload, authHeader());
 
@@ -133,6 +136,12 @@ export const updateTrainingQuestion = (qaId, payload) =>
 
 export const deleteTrainingQuestion = (qaId) =>
   axios.delete(`/training/qa/${qaId}`, authHeader());
+
+export const bulkAddTrainingQuestions = (templateId, questions) =>
+  axios.post("/training/qa/bulk", { templateId, questions }, authHeader());
+
+export const aiGenerateTrainingQuestions = (payload) =>
+  axios.post("/training/qa/ai-generate", payload, authHeader());
 
 export const getTrainingRecords = (params) =>
   axios.get("/training/records", { ...authHeader(), params });

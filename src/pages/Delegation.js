@@ -993,6 +993,116 @@ Thanks`
     }
   };
 
+  // ─────────────────────────────────────────────
+  // 📊 SUMMARY DATA (All + Individual) — frontend computed
+  // All case: total pending / total completed / percentage
+  // Individual case: name, number, designation, pending, completed, last-3-week pending, percentage
+  // Rule: Pending = Status !== "Completed", Completed = Status === "Completed"
+  // 3-Week Pending = Pending + CreatedDate 21+ days purana (isThreeWeekAboveByCreatedDate)
+  // ─────────────────────────────────────────────
+  const isSummaryPending = (t) => (t.Status || "") !== "Completed";
+  const isSummaryCompleted = (t) => (t.Status || "") === "Completed";
+
+  const summaryPendingCount = tasks.filter(isSummaryPending).length;
+  const summaryCompletedCount = tasks.filter(isSummaryCompleted).length;
+  const summaryTotalCount = tasks.length;
+  const summaryCompletedPct = summaryTotalCount
+    ? ((summaryCompletedCount / summaryTotalCount) * 100).toFixed(2)
+    : "0.00";
+  const summaryPendingPct = summaryTotalCount
+    ? ((summaryPendingCount / summaryTotalCount) * 100).toFixed(2)
+    : "0.00";
+
+  const getEmpInfo = (empName) =>
+    employees.find((e) => e.name === empName) || {};
+
+  // All select ho to har employee ki row; individual ho to sirf uski row
+  const summaryRows = (() => {
+    let names = [];
+    if (selectedEmp === "all") {
+      names = [...new Set(tasks.map((t) => t.Name).filter(Boolean))];
+      // jiska koi task nahi usko bhi list me rakho taaki number/designation dikhe
+      employees.forEach((e) => {
+        if (e?.name && !names.includes(e.name)) names.push(e.name);
+      });
+    } else if (selectedEmp) {
+      names = [selectedEmp];
+    }
+    return names
+      .map((empName) => {
+        const empTasks = tasks.filter((t) => t.Name === empName);
+        const pending = empTasks.filter(isSummaryPending).length;
+        const completed = empTasks.filter(isSummaryCompleted).length;
+        const threeWeekPending = empTasks.filter(
+          (t) => isSummaryPending(t) && isThreeWeekAboveByCreatedDate(t.CreatedDate)
+        ).length;
+        const total = empTasks.length;
+        const percent = total
+          ? ((completed / total) * 100).toFixed(2)
+          : "0.00";
+        const info = getEmpInfo(empName);
+        return {
+          name: empName,
+          number: info.number || info.mobile || "—",
+          designation:
+            info.Designation ||
+            info.designation ||
+            info.Department ||
+            info.department ||
+            "—",
+          pending,
+          completed,
+          threeWeekPending,
+          total,
+          percent,
+        };
+      })
+      .sort((a, b) => a.name.localeCompare(b.name));
+  })();
+
+  const downloadSummaryReport = () => {
+    if (!selectedEmp) {
+      toast.warn("Select employee first");
+      return;
+    }
+    const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+    doc.setFontSize(14);
+    doc.text(
+      selectedEmp === "all"
+        ? `Delegation Summary (All) — Pending: ${summaryPendingCount}, Completed: ${summaryCompletedCount}, Completed%: ${summaryCompletedPct}%`
+        : `Delegation Summary — ${selectedEmp}`,
+      14,
+      15
+    );
+    autoTable(doc, {
+      head: [[
+        "Name",
+        "Number",
+        "Designation",
+        "Total Pending",
+        "Total Completed",
+        "Last 3-Week Pending",
+        "Completed %",
+      ]],
+      body: summaryRows.map((r) => [
+        r.name,
+        String(r.number),
+        String(r.designation),
+        r.pending,
+        r.completed,
+        r.threeWeekPending,
+        `${r.percent}%`,
+      ]),
+      startY: 22,
+      theme: "grid",
+      styles: { fontSize: 9, cellPadding: 2, overflow: "linebreak" },
+    });
+    doc.save(
+      `delegation_summary_${selectedEmp}_${new Date().toISOString().slice(0, 10)}.pdf`
+    );
+    toast.success("Summary report downloaded");
+  };
+
   return (
     <div className="p-4 max-w-4xl mx-auto">
       {/* ✅ Floating Go to Top Button */}
@@ -1227,11 +1337,99 @@ Thanks`
             >
               Approved
             </button>
+            <button
+              className={`px-3 py-2 rounded ${
+                activeTab === "summary" ? "bg-indigo-600 text-white" : "bg-gray-300"
+              }`}
+              onClick={() => setActiveTab("summary")}
+            >
+              📊 Summary
+            </button>
           </div>
 
-          {/* Sort Buttons */}
-          <div className="flex gap-3 mb-4 flex-wrap items-center">
-            <span className="text-sm font-medium text-gray-700 mr-2">Sort by:</span>
+          {activeTab === "summary" ? (
+            <div className="space-y-4">
+              {/* ALL CASE — 3 cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
+                <div className="bg-white p-4 rounded shadow border text-center">
+                  <div className="text-xs text-gray-500 font-semibold">TOTAL PENDING</div>
+                  <div className="text-3xl font-black text-amber-600">{summaryPendingCount}</div>
+                  <div className="text-xs text-gray-500">{summaryPendingPct}% of total</div>
+                </div>
+                <div className="bg-white p-4 rounded shadow border text-center">
+                  <div className="text-xs text-gray-500 font-semibold">TOTAL COMPLETED</div>
+                  <div className="text-3xl font-black text-green-600">{summaryCompletedCount}</div>
+                  <div className="text-xs text-gray-500">{summaryCompletedPct}% of total</div>
+                </div>
+                <div className="bg-white p-4 rounded shadow border text-center">
+                  <div className="text-xs text-gray-500 font-semibold">COMPLETED %</div>
+                  <div className="text-3xl font-black text-blue-600">{summaryCompletedPct}%</div>
+                  <div className="text-xs text-gray-500">Pending {summaryPendingPct}%</div>
+                </div>
+                <div className="bg-white p-4 rounded shadow border text-center">
+                  <div className="text-xs text-gray-500 font-semibold">TOTAL TASKS</div>
+                  <div className="text-3xl font-black text-gray-800">{summaryTotalCount}</div>
+                  <div className="text-xs text-gray-500">
+                    {selectedEmp === "all" ? "All employees" : selectedEmp}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  className="bg-indigo-600 text-white px-4 py-2 rounded"
+                  onClick={downloadSummaryReport}
+                >
+                  📄 Download Summary (PDF)
+                </button>
+              </div>
+
+              {/* INDIVIDUAL / ALL TABLE */}
+              <div className="bg-white rounded shadow border overflow-x-auto">
+                <table className="min-w-full text-sm">
+                  <thead>
+                    <tr className="bg-gray-100 text-left">
+                      <th className="px-3 py-2 border">Name</th>
+                      <th className="px-3 py-2 border">Number</th>
+                      <th className="px-3 py-2 border">Designation</th>
+                      <th className="px-3 py-2 border">Total Pending</th>
+                      <th className="px-3 py-2 border">Total Completed</th>
+                      <th className="px-3 py-2 border">Last 3-Week Pending</th>
+                      <th className="px-3 py-2 border">Completed %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {summaryRows.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="text-center text-gray-500 py-6">
+                          No summary data
+                        </td>
+                      </tr>
+                    ) : (
+                      summaryRows.map((r) => (
+                        <tr key={r.name} className="hover:bg-gray-50">
+                          <td className="px-3 py-2 border font-semibold">{r.name}</td>
+                          <td className="px-3 py-2 border">{r.number}</td>
+                          <td className="px-3 py-2 border">{r.designation}</td>
+                          <td className="px-3 py-2 border text-center text-amber-700 font-bold">{r.pending}</td>
+                          <td className="px-3 py-2 border text-center text-green-700 font-bold">{r.completed}</td>
+                          <td className="px-3 py-2 border text-center text-red-600 font-bold">{r.threeWeekPending}</td>
+                          <td className="px-3 py-2 border text-center font-bold">{r.percent}%</td>
+                        </tr>
+                      ))
+                    )}
+                  </tbody>
+                </table>
+              </div>
+              <p className="text-xs text-gray-500">
+                Pending = Status Completed nahi hai • Completed = Status Completed hai • Last 3-Week Pending = Pending + CreatedDate 21+ din purana • % = Completed / Total × 100
+              </p>
+            </div>
+            ) : (
+            <>
+            {/* Sort Buttons */}
+            <div className="flex gap-3 mb-4 flex-wrap items-center">
+              <span className="text-sm font-medium text-gray-700 mr-2">Sort by:</span>
             
             <button
               onClick={() => toggleSort("deadline")}
@@ -1354,6 +1552,8 @@ Thanks`
               ))
             )}
           </div>
+          </>
+          )}
         </>
       )}
       
