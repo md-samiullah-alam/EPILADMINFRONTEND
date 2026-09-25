@@ -42,6 +42,11 @@ export default function Delegation() {
   const [sortBy, setSortBy] = useState("createdDate");
   const [sortOrder, setSortOrder] = useState("asc");
 
+  // 📊 SUMMARY TABLE SORT (Top-to-Bottom / Bottom-to-Top) — top-level hook
+  // key: pending | completed | threeWeekPending | percent | name
+  const [summarySortKey, setSummarySortKey] = useState("pending");
+  const [summarySortDir, setSummarySortDir] = useState("desc");
+
   // ✅ Go to top button visibility
   const [showGoToTop, setShowGoToTop] = useState(false);
 
@@ -1005,6 +1010,9 @@ Thanks`
 
   const summaryPendingCount = tasks.filter(isSummaryPending).length;
   const summaryCompletedCount = tasks.filter(isSummaryCompleted).length;
+  const summaryThreeWeekCount = tasks.filter(
+    (t) => isSummaryPending(t) && isThreeWeekAboveByCreatedDate(t.CreatedDate)
+  ).length;
   const summaryTotalCount = tasks.length;
   const summaryCompletedPct = summaryTotalCount
     ? ((summaryCompletedCount / summaryTotalCount) * 100).toFixed(2)
@@ -1057,8 +1065,36 @@ Thanks`
           percent,
         };
       })
-      .sort((a, b) => a.name.localeCompare(b.name));
+      .sort((a, b) => {
+        // DEFAULT TOP-TO-BOTTOM RULE: sabse jyada pending upar
+        if (b.pending !== a.pending) return b.pending - a.pending;
+        if (b.threeWeekPending !== a.threeWeekPending) return b.threeWeekPending - a.threeWeekPending;
+        if (b.completed !== a.completed) return b.completed - a.completed;
+        return a.name.localeCompare(b.name);
+      });
   })();
+
+  // ── SUMMARY TABLE SORT (Top-to-Bottom / Bottom-to-Top) ──
+  const toggleSummarySort = (key) => {
+    if (summarySortKey === key) {
+      setSummarySortDir(summarySortDir === "desc" ? "asc" : "desc");
+    } else {
+      setSummarySortKey(key);
+      setSummarySortDir("desc");
+    }
+  };
+  const sortedSummaryRows = [...summaryRows].sort((a, b) => {
+    let va = a[summarySortKey];
+    let vb = b[summarySortKey];
+    if (summarySortKey === "percent") { va = parseFloat(va); vb = parseFloat(vb); }
+    if (summarySortKey === "name") {
+      return summarySortDir === "desc"
+        ? String(vb).localeCompare(String(va))
+        : String(va).localeCompare(String(vb));
+    }
+    const diff = (Number(vb) || 0) - (Number(va) || 0);
+    return summarySortDir === "desc" ? diff : -diff;
+  });
 
   const downloadSummaryReport = () => {
     if (!selectedEmp) {
@@ -1067,10 +1103,11 @@ Thanks`
     }
     const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
     doc.setFontSize(14);
+    // TOP-TO-BOTTOM RULE: Total Pending > Total Completed > Last 3-Week > Percentage
     doc.text(
       selectedEmp === "all"
-        ? `Delegation Summary (All) — Pending: ${summaryPendingCount}, Completed: ${summaryCompletedCount}, Completed%: ${summaryCompletedPct}%`
-        : `Delegation Summary — ${selectedEmp}`,
+        ? `Delegation Summary (All) — Total Pending: ${summaryPendingCount}, Total Completed: ${summaryCompletedCount}, Last 3-Week Pending: ${summaryThreeWeekCount}, Completed%: ${summaryCompletedPct}%`
+        : `Delegation Summary — ${selectedEmp} | Pending: ${summaryPendingCount}, Completed: ${summaryCompletedCount}, 3-Week: ${summaryThreeWeekCount}, ${summaryCompletedPct}%`,
       14,
       15
     );
@@ -1084,7 +1121,7 @@ Thanks`
         "Last 3-Week Pending",
         "Completed %",
       ]],
-      body: summaryRows.map((r) => [
+      body: sortedSummaryRows.map((r) => [
         r.name,
         String(r.number),
         String(r.designation),
@@ -1349,33 +1386,60 @@ Thanks`
 
           {activeTab === "summary" ? (
             <div className="space-y-4">
-              {/* ALL CASE — 3 cards */}
+              {/* ALL CASE — 4 cards: TOP-TO-BOTTOM order Pending > Completed > 3Week > % */}
               <div className="grid grid-cols-1 sm:grid-cols-4 gap-3">
                 <div className="bg-white p-4 rounded shadow border text-center">
-                  <div className="text-xs text-gray-500 font-semibold">TOTAL PENDING</div>
+                  <div className="text-xs text-gray-500 font-semibold">1️⃣ TOTAL PENDING</div>
                   <div className="text-3xl font-black text-amber-600">{summaryPendingCount}</div>
                   <div className="text-xs text-gray-500">{summaryPendingPct}% of total</div>
                 </div>
                 <div className="bg-white p-4 rounded shadow border text-center">
-                  <div className="text-xs text-gray-500 font-semibold">TOTAL COMPLETED</div>
+                  <div className="text-xs text-gray-500 font-semibold">2️⃣ TOTAL COMPLETED</div>
                   <div className="text-3xl font-black text-green-600">{summaryCompletedCount}</div>
                   <div className="text-xs text-gray-500">{summaryCompletedPct}% of total</div>
                 </div>
                 <div className="bg-white p-4 rounded shadow border text-center">
-                  <div className="text-xs text-gray-500 font-semibold">COMPLETED %</div>
-                  <div className="text-3xl font-black text-blue-600">{summaryCompletedPct}%</div>
-                  <div className="text-xs text-gray-500">Pending {summaryPendingPct}%</div>
+                  <div className="text-xs text-gray-500 font-semibold">3️⃣ LAST 3-WEEK PENDING</div>
+                  <div className="text-3xl font-black text-red-600">{summaryThreeWeekCount}</div>
+                  <div className="text-xs text-gray-500">21+ days old pending</div>
                 </div>
                 <div className="bg-white p-4 rounded shadow border text-center">
-                  <div className="text-xs text-gray-500 font-semibold">TOTAL TASKS</div>
-                  <div className="text-3xl font-black text-gray-800">{summaryTotalCount}</div>
-                  <div className="text-xs text-gray-500">
-                    {selectedEmp === "all" ? "All employees" : selectedEmp}
-                  </div>
+                  <div className="text-xs text-gray-500 font-semibold">4️⃣ COMPLETED %</div>
+                  <div className="text-3xl font-black text-blue-600">{summaryCompletedPct}%</div>
+                  <div className="text-xs text-gray-500">Pending {summaryPendingPct}% • Total {summaryTotalCount}</div>
                 </div>
               </div>
 
-              <div className="flex justify-end">
+              {/* ⬆️⬇️ TOP-TO-BOTTOM SORT BUTTONS */}
+              <div className="bg-white p-3 rounded shadow border flex gap-2 flex-wrap items-center">
+                <span className="text-sm font-bold text-gray-700 mr-1">⬆️⬇️ Top-to-Bottom:</span>
+                {[
+                  { key: "pending", label: "Total Pending" },
+                  { key: "completed", label: "Total Completed" },
+                  { key: "threeWeekPending", label: "Last 3-Week" },
+                  { key: "percent", label: "Percentage %" },
+                ].map((b) => (
+                  <button
+                    key={b.key}
+                    onClick={() => toggleSummarySort(b.key)}
+                    className={`px-3 py-1.5 rounded text-sm font-semibold flex items-center gap-1 transition ${
+                      summarySortKey === b.key
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-200 text-gray-700 hover:bg-gray-300"
+                    }`}
+                  >
+                    {b.label}
+                    {summarySortKey === b.key && (
+                      <span className="ml-1">
+                        {summarySortDir === "desc" ? "⬇️ Top" : "⬆️ Bottom"}
+                      </span>
+                    )}
+                  </button>
+                ))}
+                <span className="text-xs text-gray-500 ml-1">
+                  ({summarySortDir === "desc" ? "bada value upar" : "chhota value upar"} • download me bhi same order)
+                </span>
+                <div className="flex-1" />
                 <button
                   className="bg-indigo-600 text-white px-4 py-2 rounded"
                   onClick={downloadSummaryReport}
@@ -1399,14 +1463,14 @@ Thanks`
                     </tr>
                   </thead>
                   <tbody>
-                    {summaryRows.length === 0 ? (
+                    {sortedSummaryRows.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="text-center text-gray-500 py-6">
                           No summary data
                         </td>
                       </tr>
                     ) : (
-                      summaryRows.map((r) => (
+                      sortedSummaryRows.map((r) => (
                         <tr key={r.name} className="hover:bg-gray-50">
                           <td className="px-3 py-2 border font-semibold">{r.name}</td>
                           <td className="px-3 py-2 border">{r.number}</td>
