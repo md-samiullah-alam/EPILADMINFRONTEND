@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
-import { getAllEmployees, getAllWorklists, createWorklist, updateWorklistAdmin, bulkUploadWorklists, downloadWorklists, getAdminOccupancy, updateAITime, getAISheet } from "../api/services";
+import { getAllEmployees, getAllWorklists, createWorklist, updateWorklistAdmin, deleteWorklistAdmin, bulkUploadWorklists, downloadWorklists, getAdminOccupancy, updateAITime, getAISheet } from "../api/services";
 import { ToastContainer, toast } from "react-toastify";
 import "react-toastify/dist/ReactToastify.css";
 import * as XLSX from "xlsx";

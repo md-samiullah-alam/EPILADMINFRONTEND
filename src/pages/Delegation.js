@@ -13,7 +13,10 @@ export default function Delegation() {
   const [employees, setEmployees] = useState([]);
   const [admin, setAdmin] = useState([]);
 
-  const [selectedEmp, setSelectedEmp] = useState("");
+  const [selectedEmp, setSelectedEmp] = useState("all");
+  // ── NEW: Department / Designation filters (cascading) ──
+  const [deptFilter, setDeptFilter] = useState("all");
+  const [desigFilter, setDesigFilter] = useState("all");
   const [tasks, setTasks] = useState([]);
   const [loading, setLoading] = useState(false);
 
@@ -214,7 +217,7 @@ export default function Delegation() {
       return;
     }
 
-    const filtered = tasks.filter(
+    const filtered = scopedTasks.filter(
       t => t.Taskcompletedapproval !== "Approved"
     );
 
@@ -283,7 +286,7 @@ export default function Delegation() {
       return;
     }
 
-    const filtered = tasks.filter(
+    const filtered = scopedTasks.filter(
       t => t.Status === "Completed" && t.Taskcompletedapproval !== "Approved"
     );
 
@@ -352,7 +355,7 @@ export default function Delegation() {
       return;
     }
 
-    const filtered = tasks.filter(
+    const filtered = scopedTasks.filter(
       t => t.Status !== "Completed" && t.Taskcompletedapproval !== "Approved"
     );
 
@@ -422,7 +425,7 @@ export default function Delegation() {
       return;
     }
 
-    const filtered = tasks.filter(
+    const filtered = scopedTasks.filter(
       t => isThreeWeekAboveByCreatedDate(t.CreatedDate) && 
            t.Status !== "Completed" && 
            t.Taskcompletedapproval !== "Approved"
@@ -494,7 +497,7 @@ export default function Delegation() {
     }
 
     try {
-      const pending = tasks.filter(t => 
+      const pending = scopedTasks.filter(t => 
         isTodayOrPast(t.Deadline) && 
         t.Status !== "Completed"
       );
@@ -711,8 +714,8 @@ Thanks`
   }, [selectedEmp, assignBy]);
 
   const createTask = async () => {
-    if (!selectedEmp) {
-      toast.warn("Select employee first");
+    if (!selectedEmp || selectedEmp === "all") {
+      toast.warn("Please select a single employee to create task (All Delegation me task create nahi hota)");
       return;
     }
     if (!form.TaskName || !form.Deadline) {
@@ -926,7 +929,54 @@ Thanks`
   };
 
   // -----------------------
-  const sortedTasks = [...tasks].sort((a, b) => {
+  // NEW: helpers — Department / Designation normalize (scopedTasks se PEHLE!)
+  const getEmpDept = (e) =>
+    String(e?.Department || e?.department || "").trim();
+  const getEmpDesig = (e) =>
+    String(e?.Designation || e?.designation || "").trim();
+
+  // Department options (employees se unique)
+  const departmentOptions = (() => {
+    const seen = new Map();
+    for (const e of employees) {
+      const d = getEmpDept(e);
+      if (!d) continue;
+      const k = d.toUpperCase();
+      if (!seen.has(k)) seen.set(k, d);
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  })();
+
+  // Designation options — dept select ho to us dept tak limited (cascading)
+  const designationOptions = (() => {
+    const seen = new Map();
+    for (const e of employees) {
+      if (deptFilter !== "all" && getEmpDept(e).toUpperCase() !== String(deptFilter).toUpperCase()) continue;
+      const d = getEmpDesig(e);
+      if (!d) continue;
+      const k = d.toUpperCase();
+      if (!seen.has(k)) seen.set(k, d);
+    }
+    return [...seen.values()].sort((a, b) => a.localeCompare(b));
+  })();
+
+  // Employee dropdown list — dept + desig dono se filtered (cascading)
+  const filteredEmployees = employees.filter((e) => {
+    if (deptFilter !== "all" && getEmpDept(e).toUpperCase() !== String(deptFilter).toUpperCase()) return false;
+    if (desigFilter !== "all" && getEmpDesig(e).toUpperCase() !== String(desigFilter).toUpperCase()) return false;
+    return true;
+  });
+
+  // NEW: scoped tasks — "all" view me dept/desig filter ke bahar ke tasks hatao
+  // (individual view me tasks pehle se usi employee ke hain, isliye as-is)
+  const scopedTasks = (() => {
+    if (selectedEmp !== "all") return tasks;
+    if (deptFilter === "all" && desigFilter === "all") return tasks;
+    const allow = new Set(filteredEmployees.map((e) => e.name));
+    return tasks.filter((t) => allow.has(t.Name));
+  })();
+
+  const sortedTasks = [...scopedTasks].sort((a, b) => {
     const nameA = (a.Name || "").toLowerCase();
     const nameB = (b.Name || "").toLowerCase();
     return nameA.localeCompare(nameB);
@@ -1008,12 +1058,12 @@ Thanks`
   const isSummaryPending = (t) => (t.Status || "") !== "Completed";
   const isSummaryCompleted = (t) => (t.Status || "") === "Completed";
 
-  const summaryPendingCount = tasks.filter(isSummaryPending).length;
-  const summaryCompletedCount = tasks.filter(isSummaryCompleted).length;
-  const summaryThreeWeekCount = tasks.filter(
+  const summaryPendingCount = scopedTasks.filter(isSummaryPending).length;
+  const summaryCompletedCount = scopedTasks.filter(isSummaryCompleted).length;
+  const summaryThreeWeekCount = scopedTasks.filter(
     (t) => isSummaryPending(t) && isThreeWeekAboveByCreatedDate(t.CreatedDate)
   ).length;
-  const summaryTotalCount = tasks.length;
+  const summaryTotalCount = scopedTasks.length;
   const summaryCompletedPct = summaryTotalCount
     ? ((summaryCompletedCount / summaryTotalCount) * 100).toFixed(2)
     : "0.00";
@@ -1025,12 +1075,14 @@ Thanks`
     employees.find((e) => e.name === empName) || {};
 
   // All select ho to har employee ki row; individual ho to sirf uski row
+  // dept/desig filter active ho to summary bhi usi scope tak limited
+  // (scopedTasks: "all" view me filter-scope, individual me as-is)
   const summaryRows = (() => {
     let names = [];
     if (selectedEmp === "all") {
-      names = [...new Set(tasks.map((t) => t.Name).filter(Boolean))];
+      names = [...new Set(scopedTasks.map((t) => t.Name).filter(Boolean))];
       // jiska koi task nahi usko bhi list me rakho taaki number/designation dikhe
-      employees.forEach((e) => {
+      filteredEmployees.forEach((e) => {
         if (e?.name && !names.includes(e.name)) names.push(e.name);
       });
     } else if (selectedEmp) {
@@ -1038,7 +1090,7 @@ Thanks`
     }
     return names
       .map((empName) => {
-        const empTasks = tasks.filter((t) => t.Name === empName);
+        const empTasks = scopedTasks.filter((t) => t.Name === empName);
         const pending = empTasks.filter(isSummaryPending).length;
         const completed = empTasks.filter(isSummaryCompleted).length;
         const threeWeekPending = empTasks.filter(
@@ -1169,28 +1221,84 @@ Thanks`
         </button>
       )}
 
-      {/* Employee Select */}
+      {/* Employee Select + NEW Dept/Desig filters */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-4">
+        <div>
+          <label className="block mb-1 text-sm font-medium text-gray-700">
+            Department Wise
+          </label>
+          <select
+            className="w-full h-11 rounded-md border border-gray-300 bg-white px-3 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
+                       hover:border-gray-400 transition"
+            value={deptFilter}
+            onChange={(e) => {
+              setDeptFilter(e.target.value);
+              setDesigFilter("all");
+              setSelectedEmp("all");
+              setShowCreate(false);
+            }}
+          >
+            <option value="all">All Departments</option>
+            {departmentOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div>
+          <label className="block mb-1 text-sm font-medium text-gray-700">
+            Designation Wise
+          </label>
+          <select
+            className="w-full h-11 rounded-md border border-gray-300 bg-white px-3 text-sm
+                       focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
+                       hover:border-gray-400 transition"
+            value={desigFilter}
+            onChange={(e) => {
+              setDesigFilter(e.target.value);
+              setSelectedEmp("all");
+              setShowCreate(false);
+            }}
+          >
+            <option value="all">All Designations</option>
+            {designationOptions.map((d) => (
+              <option key={d} value={d}>
+                {d}
+              </option>
+            ))}
+          </select>
+        </div>
+      </div>
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-8">
         <div>
           <label className="block mb-1 text-sm font-medium text-gray-700">
             Select Employee
+            {deptFilter !== "all" || desigFilter !== "all" ? (
+              <span className="ml-2 text-xs text-indigo-600 font-normal">
+                ({filteredEmployees.length} filtered)
+              </span>
+            ) : null}
           </label>
           <select
             className="w-full h-11 rounded-md border border-gray-300 bg-white px-3 text-sm
                        focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500
                        hover:border-gray-400 transition"
             value={selectedEmp}
-            onChange={(e) => setSelectedEmp(e.target.value)}
+            onChange={(e) => { setSelectedEmp(e.target.value); setShowCreate(false); }}
           >
-            <option value="">-- Select Employee --</option>
             <option value="all">All Delegation</option>
-            {employees
+            {[...filteredEmployees]
               .sort((a, b) =>
-                a.name.toLowerCase().localeCompare(b.name.toLowerCase())
+                String(a.name || "").toLowerCase().localeCompare(String(b.name || "").toLowerCase())
               )
               .map((emp) => (
                 <option key={emp.name} value={emp.name}>
                   {emp.name}
+                  {getEmpDesig(emp) ? ` — ${getEmpDesig(emp)}` : ""}
                 </option>
               ))}
           </select>
@@ -1228,15 +1336,17 @@ Thanks`
         </div>
       </div>
 
-      {/* Create Task And Download Buttons */}
+      {/* Create Task And Download Buttons — hamesha visible (default All Delegation) */}
       {selectedEmp && (
         <div className="mb-6 flex gap-3 flex-wrap">
-          <button
-            className="bg-blue-600 text-white px-4 py-2 rounded"
-            onClick={() => setShowCreate(!showCreate)}
-          >
-            {showCreate ? "Cancel" : "Create Task"}
-          </button>
+          {selectedEmp !== "all" && (
+            <button
+              className="bg-blue-600 text-white px-4 py-2 rounded"
+              onClick={() => setShowCreate(!showCreate)}
+            >
+              {showCreate ? "Cancel" : "Create Task"}
+            </button>
+          )}
 
           {/* Download Dropdown */}
           <div className="relative" ref={dropdownRef}>
@@ -1286,8 +1396,8 @@ Thanks`
         </div>
       )}
 
-      {/* Create Task Form */}
-      {showCreate && (
+      {/* Create Task Form — sirf single employee select pe */}
+      {showCreate && selectedEmp && selectedEmp !== "all" && (
         <div className="bg-white p-4 rounded shadow border mb-6">
           <label htmlFor="taskName" className="block text-sm font-semibold mb-2">
             Task Name
@@ -1322,12 +1432,6 @@ Thanks`
       {/* Loading */}
       {loading && selectedEmp && (
         <div className="text-center text-lg p-6">Loading tasks...</div>
-      )}
-
-      {!selectedEmp && (
-        <div className="text-center text-gray-500 mt-10">
-          Please select an employee to view delegation tasks.
-        </div>
       )}
 
       {!loading && selectedEmp && (
